@@ -3,6 +3,7 @@ from typing import List, Optional, Union
 import random
 import matplotlib.pyplot as plt
 from functools import cached_property
+from shapely.geometry import Polygon, Point as ShapelyPoint
 
 class Point:
     def __init__(self, x: float, y: float):
@@ -94,7 +95,9 @@ class RRT:
                     return False
             elif isinstance(obs, Rectangle):
                 corners = obs.get_four_corners
-                if min(corners[:, 0]) <= point.x <= max(corners[:,0]) and min(corners[:,1]) <= point.y <= max(corners[:,1]):
+                poly_corners = Polygon(corners)
+                poly_point = ShapelyPoint(point.x, point.y)
+                if poly_corners.contains(poly_point):
                     return False
 
         return True
