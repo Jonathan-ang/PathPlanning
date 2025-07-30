@@ -1,8 +1,8 @@
 import numpy as np
-from typing import List, Optional
+from typing import List, Optional, Union
 import random
 import matplotlib.pyplot as plt
-
+from functools import cached_property
 
 class Point:
     def __init__(self, x: float, y: float):
@@ -26,6 +26,20 @@ class Rectangle:
         self.center = center
         self.yaw = yaw
 
+    @cached_property
+    def get_four_corners(self):
+        corners_in_box: np.ndarray = np.array([
+            [-self.size[0]/2,  -self.size[1]/2],
+            [-self.size[0]/2,  self.size[1]/2],
+            [self.size[0]/2,  self.size[1]/2],
+            [self.size[0]/2,  -self.size[1]/2],
+        ])
+        R: np.ndarray = np.array([
+            [np.cos(self.yaw), np.sin(self.yaw)],
+            [-np.sin(self.yaw), np.cos(self.yaw)]
+        ])
+        return (np.array([[self.center.x, self.center.y]]*4).T + R @ corners_in_box.T).T
+
 class Bound1D:
     def __init__(self, min_range: float, max_range: float):
         self.min_range = min_range
@@ -41,7 +55,7 @@ def get_distance_from_points(a: Point, b: Point):
 
 class RRT:
     def __init__(self, start_point:Point, end_point: Point, bounds: Bound2D, goal_sample_rate: float = 0.1, step_size: float = 0.01, goal_tolerance: float=1.0):
-        self.obstacles: List[ Circle] = []
+        self.obstacles: List[Union[Circle, Rectangle]] = []
         self.step_size = step_size
         self.start_point = start_point
         self.end_point = end_point
@@ -50,7 +64,7 @@ class RRT:
         self.bounds = bounds
         self.goal_tolerance = goal_tolerance
 
-    def add_obstacles(self, obstacles:List[Circle]):
+    def add_obstacles(self, obstacles:List[Union[Circle, Rectangle]]):
         for obstacle in obstacles:
             self.obstacles.append(obstacle)
 
@@ -75,8 +89,14 @@ class RRT:
     
     def is_collision_free(self, point: Point) -> bool:
         for obs in self.obstacles:
-            if np.linalg.norm([obs.center.x-point.x, obs.center.y-point.y])< obs.radius:
-                return False
+            if isinstance(obs, Circle):
+                if np.linalg.norm([obs.center.x-point.x, obs.center.y-point.y])< obs.radius:
+                    return False
+            elif isinstance(obs, Rectangle):
+                corners = obs.get_four_corners
+                if min(corners[:, 0]) <= point.x <= max(corners[:,0]) and min(corners[:,1]) <= point.y <= max(corners[:,1]):
+                    return False
+
         return True
             
     def extract_path(self):
@@ -100,8 +120,11 @@ class RRT:
             plt.plot(px, py, '-r', linewidth=2)
 
         for obstacle in self.obstacles:
-            circle = plt.Circle((obstacle.center.x, obstacle.center.y), obstacle.radius, color='gray')
-            plt.gca().add_patch(circle)
+            if isinstance(obstacle, Circle):
+                draw_obs = plt.Circle((obstacle.center.x, obstacle.center.y), obstacle.radius, color='gray')
+            elif isinstance(obstacle, Rectangle):
+                draw_obs = plt.Polygon(obstacle.get_four_corners, color='gray')
+            plt.gca().add_patch(draw_obs)
 
         plt.plot(self.start_point.x, self.start_point.y, "bo", label="Start")
         plt.plot(self.end_point.x, self.end_point.y, "ro", label="Goal")
@@ -207,6 +230,8 @@ if __name__ == "__main__":
     rrt = RRTSTAR(start_point=start, end_point=goal, bounds=bounds, goal_sample_rate=goal_sample_rate, step_size=0.5)
 
     rrt.add_obstacles([Circle(center=Point(5, 5), radius=1.0), Circle(center=Point(3, 6), radius=1.0)])
+    rrt.add_obstacles([Rectangle(center=Point(5, 1), size=np.array([1.0,1.0]), yaw=np.pi/4),])
+
 
     path = rrt.plan()
     print(path)
